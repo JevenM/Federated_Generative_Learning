@@ -11,8 +11,9 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
+error_const = "Not Implemented!"
 
-def get_FL_dataset(args):
+def get_fl_dataset(args):
     if args.data_type == 'imagenet100':
         num_classes = 100
     elif args.data_type == 'imagenet1000' or args.data_type == 'imagenet1000_syn':
@@ -39,7 +40,7 @@ def get_FL_dataset(args):
         return trainloader_dict, testloader_dict, None, None, num_classes
     # for label distribution skew
     elif "image" in args.data_type:
-        train_dataset, test_dataset, user_groups, traindata_cls_counts = partition_data(args.data_type, args.partition, 
+        train_dataset, test_dataset, user_groups, _ = partition_data(args.data_type, args.partition, 
             beta=args.beta, num_users=args.num_users, train_dir=args.data_path_train, test_dir=args.data_path_test)
 
         test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=256,
@@ -47,8 +48,7 @@ def get_FL_dataset(args):
 
         server_trainloader = None
         if args.sever_ep is not None:
-            #todo: get server_trainloader
-            # server_trainloader = get_server_trainloader()
+            # get server_trainloader
             trainset = get_dataset(data_type=args.data_type, if_syn=True, if_train=True, data_path=args.data_path_server, 
                         sample_data_nums=args.sample_data_nums, seed=args.seed-2021)
             server_trainloader = torch.utils.data.DataLoader(
@@ -56,7 +56,7 @@ def get_FL_dataset(args):
         return train_dataset, test_loader, user_groups, server_trainloader, num_classes
     
     else:
-        raise ValueError("Not Implemented!")
+        raise ValueError(error_const)
     
 def args_parser():
     parser = argparse.ArgumentParser(description='PyTorch Training with federation learning')
@@ -66,7 +66,7 @@ def args_parser():
     parser.add_argument('--local_ep', type=int, default=5,
                         help="the number of local epochs: E")
     parser.add_argument('--sever_ep', type=int, default=None,
-                    help="the number of sever epoches: E, if None, not training in server")
+                        help="the number of sever epoches: E, if None, not training in server")
     parser.add_argument('--batch_size', type=int, default=128,
                         help=" batch size: B")
     parser.add_argument('--lr', type=float, default=0.01,
@@ -94,7 +94,7 @@ def args_parser():
     parser.add_argument('--data_path_test', default=None, type=str, help='data path for test')
     parser.add_argument('--data_path_server', default=None, type=str, help='data path for test')
     parser.add_argument('--sample_data_nums', type=int, default=None, 
-                    help='if server training, sample number of syn images if None samples all data')
+                        help='if server training, sample number of syn images if None samples all data')
     parser.add_argument('--labels', nargs='+', type=int, 
                         default=[1, 73, 11, 19, 29, 31, 290, 121, 225, 39], #['airplane', 'clock', 'axe', 'basketball', 'bicycle', 'bird', 'strawberry', 'flower', 'pizza', 'bracelet'],
                         help='domainnet subdataset labels')
@@ -125,15 +125,15 @@ if __name__ == '__main__':
     args = args_parser()
     setup_seed(args.seed)
     experiment_name = "fl-{}-{}-{}".format(args.data_type, args.net, args.exp_name)
-    save_model_dir = os.path.join("checkpoints", experiment_name)
+    # save_model_dir = os.path.join("checkpoints", experiment_name)
 
     # set wandb
     if args.wandb == 1:
         wandb.init(config=args, project="FGL", group="multi-round FL", name=experiment_name)
 
     # get dataset
-    # import pdb; pdb.set_trace()
-    train_dataset, test_loader, user_groups, server_trainloader, num_classes = get_FL_dataset(args)
+    # import pdb; pdb.set_trace() # 调试，添加断点
+    train_dataset, test_loader, user_groups, server_trainloader, num_classes = get_fl_dataset(args)
     global_model = get_model(net_type=args.net, net_weight_path=args.net_path, num_classes=num_classes) 
     global_model.to("cuda")
     if args.data_type == 'domainnet':
@@ -145,6 +145,7 @@ if __name__ == '__main__':
     for com in tqdm(range(args.com_round)):
         local_weights = []
         if args.data_type == 'domainnet':
+            # 不同客户端上的类别label相同，domain不同
             for domain in args.domains:
                 w = local_update(copy.deepcopy(global_model), train_dataset[domain], n_epochs=args.local_ep, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay, if_log=True)
                 local_weights.append(copy.deepcopy(w))
@@ -158,7 +159,7 @@ if __name__ == '__main__':
                                 momentum=args.momentum, weight_decay=args.weight_decay, if_log=True)
                 local_weights.append(copy.deepcopy(w))
         else:
-            raise ValueError("Not Implemented!")
+            raise ValueError(error_const)
     
         # update global weights
         global_weights = average_weights(local_weights)
@@ -177,11 +178,12 @@ if __name__ == '__main__':
                 test_acc_domain[domain] = acc
                 if args.wandb == 1:
                     wandb.log({"test_{}_loss".format(domain): test_loss/args.batch_size})
-                    wandb.log({"test_{}_acc".format(domain):acc})
+                    wandb.log({"test_{}_acc".format(domain): acc})
             test_acc = 100.0 * correct_all / total_all
             if args.wandb == 1:
                 wandb.log({"test_acc":test_acc})
             bst_acc = max(bst_acc, test_acc)
+            # 当所有领域样本的准确率最好时，保存这个通信轮次的bst_acc_domain
             if test_acc > bst_acc:
                 bst_acc = test_acc
                 bst_acc_domain = test_acc_domain
@@ -193,11 +195,10 @@ if __name__ == '__main__':
             bst_acc = max(bst_acc, test_acc)
             if args.wandb == 1:
                 wandb.log({"test_loss": test_loss})
-                wandb.log({"test_acc":test_acc})
-                wandb.log({"bst_acc":bst_acc})
+                wandb.log({"test_acc": test_acc})
+                wandb.log({"bst_acc": bst_acc})
             print("The {}-th communication round, test acc:{}, bst_acc={}".format(com, test_acc, bst_acc))
             if args.sever_ep is not None:
-
                 local_update(global_model, server_trainloader, n_epochs=args.sever_ep, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay, if_log=True)
                 correct, total, test_loss = test_accuracy(global_model, test_loader, if_log=True)
                 test_acc = round(100.0 * correct/total, 2)
@@ -209,4 +210,4 @@ if __name__ == '__main__':
                     wandb.log({"bst_acc":bst_acc})
                 print("The {}-th communication round, finetune at sever-side, test acc:{}, bst_acc={}".format(com, test_acc, bst_acc))
         else:
-            raise ValueError("Not Implemented!")
+            raise ValueError(error_const)

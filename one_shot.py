@@ -8,6 +8,9 @@ from helper.dataset import get_dataset
 from helper.models import get_model
 from tqdm import tqdm
 
+gpu_str = 'cuda:0'
+device = torch.device(gpu_str if torch.cuda.is_available() else 'cpu')
+
 def get_arguments():
     parser = argparse.ArgumentParser(description='One-shot training')
     # Training model hyperparameter settings
@@ -109,7 +112,7 @@ if __name__ == '__main__':
         net = get_model(args.net, args.net_path, num_classes=100)
     else:   
         net = get_model(args.net, args.net_path, num_classes=10)    
-    net.to('cuda')
+    net.to(device)
     
     # train
     optimizer = optim.SGD(net.parameters(), lr=args.lr,

@@ -178,6 +178,7 @@ def local_update(model, trainloader, n_epochs, lr=0.01, momentum=0.9, weight_dec
 
 def average_weights(w):
     """
+    FedAvg
     Returns the average of the weights.
     """
     w_avg = copy.deepcopy(w[0])
